@@ -1,12 +1,10 @@
 (function() {
     try {
-      // Wait for Monaco to be available
+      // Try to use Monaco API first
       if (typeof monaco !== 'undefined') {
-        // Get all available models
         const models = monaco.editor.getModels();
         
         if (models && models.length > 0) {
-          // Get the first model which contains the code
           const model = models[0];
           const code = model.getValue();
           window.postMessage({ action: 'code', code: code }, '*');
@@ -15,26 +13,21 @@
           window.postMessage({ action: 'code', code: null }, '*');
         }
       } else {
-        // If monaco is not defined, try to extract code directly from DOM
-        const codeElements = document.querySelectorAll('.view-line .mtk1, .view-line .mtk8, .view-line .mtk9');
-        if (codeElements.length > 0) {
+        // Fallback to DOM extraction if Monaco API is not available
+        const viewLines = document.querySelectorAll('.view-line');
+        if (viewLines.length > 0) {
           let code = '';
-          let currentLine = '';
-          let prevLineTop = -1;
           
-          Array.from(codeElements).forEach(el => {
-            const lineTop = parseInt(el.parentElement.style.top);
-            if (prevLineTop !== lineTop) {
-              if (prevLineTop !== -1) code += currentLine + '\n';
-              currentLine = '';
-              prevLineTop = lineTop;
-            }
-            currentLine += el.textContent;
+          viewLines.forEach(line => {
+            code += line.textContent + '\n';
           });
-          code += currentLine;
+          
+          // Clean up the code by removing extra whitespace
+          code = code.replace(/\n\s*\n/g, '\n\n').trim();
           
           window.postMessage({ action: 'code', code: code }, '*');
         } else {
+          console.error("No view lines found in editor");
           window.postMessage({ action: 'code', code: null }, '*');
         }
       }

@@ -116,7 +116,6 @@ async function syncSolutionWithGitHub(solution) {
     // Create or update file
     console.log("Creating/updating file...");
     const encodedContent = btoa(unescape(encodeURIComponent(solution)));
-    
     const bodyData = {
       message: sha ? "Update solution from NeetCode" : "Add solution from NeetCode",
       content: encodedContent

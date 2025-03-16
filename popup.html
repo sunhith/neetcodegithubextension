@@ -2,14 +2,30 @@
 <html>
 <head>
   <title>NeetCode GitHub Sync</title>
-  <style>
-    body { width: 200px; font-family: Arial, sans-serif; }
-    button { width: 100%; padding: 10px; margin-top: 10px; cursor: pointer; }
-  </style>
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <button id="viewNeetCodeButton">View NeetCode Solution</button>
-  <button id="syncButton">Sync with GitHub</button>
+  <div class="container">
+    <h1>NeetCode GitHub Sync</h1>
+    
+    <div id="auth-section">
+      <div id="auth-status" class="status-box">
+        Not signed in to GitHub
+      </div>
+      <button id="auth-button" class="btn primary">Sign in with GitHub</button>
+    </div>
+    
+    <div id="action-section" class="hidden">
+      <button id="sync-button" class="btn success">Sync Solution to GitHub</button>
+      <div id="repo-info">
+        <label for="repo-name">Repository:</label>
+        <input type="text" id="repo-name" value="neetcode-solutions">
+      </div>
+    </div>
+    
+    <div id="status-message" class="hidden"></div>
+  </div>
+  
   <script src="popup.js"></script>
 </body>
 </html>

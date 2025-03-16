@@ -2,15 +2,17 @@
   "manifest_version": 3,
   "name": "NeetCode GitHub Sync",
   "version": "1.0",
-  "description": "Sync NeetCode solutions with GitHub.",
+  "description": "Sync NeetCode solutions with GitHub",
   "permissions": [
     "activeTab",
     "storage",
-    "scripting"
+    "scripting",
+    "identity"
   ],
   "host_permissions": [
-    "<all_urls>",
-    "https://api.github.com/*"
+    "https://api.github.com/*",
+    "https://github.com/*",
+    "https://neetcode.io/*"
   ],
   "web_accessible_resources": [{
     "resources": ["inject.js"],
@@ -19,10 +21,10 @@
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
-      "16": "icons/icons8-chrome-100.png",
-      "48": "icons/icons8-chrome-100.png",
       "128": "icons/icons8-chrome-100.png"
     }
   },
-  "options_page": "options.html"
+  "background": {
+    "service_worker": "background.js"
+  }
 }

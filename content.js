@@ -1,182 +1,169 @@
 console.log("Content script loaded");
 
-function extractCode() {
-  return new Promise(resolve => {
-    console.log("Extracting code...");
-    const editor = document.querySelector('.monaco-editor');
-    if (!editor) {
-      console.log("No editor found");
-      return resolve(null);
-    }
+// Flag to track if the script has already been injected
+if (!window.contentScriptInjected) {
+  console.log("Setting up content script (first time)");
+  window.contentScriptInjected = true;
 
-    // Create and inject the external script
-    const script = document.createElement('script');
-    script.src = chrome.runtime.getURL('inject.js');
-    document.head.appendChild(script);
-
-    // Listen for messages from inject.js
-    function handleMessage(event) {
-      if (event.data && event.data.action === 'code') {
-        window.removeEventListener('message', handleMessage);
-        resolve(event.data.code);
-      }
-    }
-
-    window.addEventListener('message', handleMessage);
+  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    console.log("Content script received message:", request);
     
-    // Clean up
-    script.onload = () => script.remove();
+    if (request.action === 'ping') {
+      console.log("Received ping, responding");
+      sendResponse({ success: true });
+      return true;
+    }
+
+    if (request.action === 'sync') {
+      console.log("Received sync request for repo:", request.repoName);
+      extractCode()
+        .then(code => {
+          console.log("Code extraction result:", code ? "Success" : "Failed");
+          if (!code) {
+            sendResponse({ success: false, message: "No code found to sync" });
+            return;
+          }
+          return syncWithGitHub(code, request.repoName);
+        })
+        .then(result => {
+          console.log("Sync result:", result);
+          sendResponse(result);
+        })
+        .catch(error => {
+          console.error("Error in sync process:", error);
+          sendResponse({ success: false, message: `Error: ${error.message}` });
+        });
+      return true; // Keep the message channel open for async response
+    }
   });
-}
 
-function getProblemSlug() {
-  const url = window.location.href;
-  const urlParts = url.split('/');
-  const slug = urlParts[urlParts.length - 1].split('?')[0];
-  console.log("Problem slug:", slug);
-  return slug;
-}
+  function extractCode() {
+    return new Promise(resolve => {
+      console.log("Extracting code...");
+      const editor = document.querySelector('.monaco-editor');
+      if (!editor) {
+        console.log("No editor found on page");
+        return resolve(null);
+      }
 
-async function getNeetCodeSolution() {
-  console.log("Getting NeetCode solution...");
-  const slug = getProblemSlug();
-  const url = `https://neetcode.io/problems/${slug}`;
-  
-  try {
-    const response = await fetch(url);
-    const html = await response.text();
-    
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, 'text/html');
-    
-    const solutionElement = doc.querySelector('.solution-code');
-    
-    if (solutionElement) {
-      const solution = solutionElement.textContent.trim();
-      console.log("Solution found:", solution.substring(0, 50) + "...");
-      return solution;
-    } else {
-      console.log("No solution element found");
-      return null;
-    }
-  } catch (error) {
-    console.error("Error fetching NeetCode solution:", error);
-    return null;
-  }
-}
-
-async function syncSolutionWithGitHub(solution) {
-  console.log("Syncing solution with GitHub...");
-  
-  if (!solution) {
-    console.error("No solution to sync");
-    return { message: "No solution found to sync!" };
-  }
-
-  try {
-    const result1 = await chrome.storage.local.get('githubToken');
-    const githubToken = result1.githubToken;
-    
-    if (!githubToken) {
-      console.error("GitHub token not set");
-      return { message: "GitHub token not set! Please set it in the extension options." };
-    }
-
-    const repoOwner = 'sunhith';
-    const repoName = 'neetcodesolutions';
-    const problemSlug = getProblemSlug();
-    const filePath = `${problemSlug}.py`;
-    
-    const apiUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/contents/${filePath}`;
-
-    // Check if file exists
-    console.log("Checking if file exists:", apiUrl);
-    let sha;
-    try {
-      const checkResponse = await fetch(apiUrl, {
-        headers: { 
-          'Authorization': `Bearer ${githubToken}`,
-          'Accept': 'application/vnd.github.v3+json'
-        }
-      });
+      // Create and inject the script
+      console.log("Injecting code extraction script");
+      const script = document.createElement('script');
+      script.src = chrome.runtime.getURL('inject.js');
+      document.head.appendChild(script);
       
-      if (checkResponse.status === 200) {
-        const fileData = await checkResponse.json();
-        sha = fileData.sha;
-        console.log("File exists, will update. SHA:", sha);
-      } else if (checkResponse.status === 404) {
-        console.log("File does not exist, will create new file");
+      // Listen for the message from inject.js
+      function handleMessage(event) {
+        if (event.data && event.data.action === 'code') {
+          console.log("Received code from inject.js:", event.data.code ? "Success" : "Failed");
+          window.removeEventListener('message', handleMessage);
+          resolve(event.data.code);
+        }
+      }
+      window.addEventListener('message', handleMessage);
+      script.onload = () => {
+        console.log("Injection script loaded");
+        script.remove();
+      };
+    });
+  }
+
+  function getProblemSlug() {
+    const url = window.location.href;
+    const urlParts = url.split('/');
+    const slug = urlParts[urlParts.length - 1].split('?')[0];
+    console.log("Problem slug:", slug);
+    return slug;
+  }
+
+  async function syncWithGitHub(code, repoName) {
+    console.log("Syncing with GitHub for repo:", repoName);
+    if (!code) {
+      console.log("No code to sync");
+      return { success: false, message: "No code found to sync" };
+    }
+
+    try {
+      console.log("Getting GitHub credentials from storage");
+      const { githubToken, username } = await chrome.storage.local.get(['githubToken', 'username']);
+      console.log("Credentials retrieved:", username, "Token:", githubToken ? "exists" : "missing");
+      
+      if (!githubToken) {
+        return { success: false, message: "Please sign in with GitHub first" };
+      }
+
+      const problemSlug = getProblemSlug();
+      const filePath = `${problemSlug}.py`;
+      const apiUrl = `https://api.github.com/repos/${username}/${repoName}/contents/${filePath}`;
+      console.log("API URL:", apiUrl);
+      
+      // Check if file exists
+      let sha;
+      try {
+        console.log("Checking if file already exists");
+        const checkResponse = await fetch(apiUrl, {
+          headers: {
+            'Authorization': `token ${githubToken}`,
+            'Accept': 'application/vnd.github.v3+json'
+          }
+        });
+        console.log("File check response status:", checkResponse.status);
+        
+        if (checkResponse.status === 200) {
+          const fileData = await checkResponse.json();
+          sha = fileData.sha;
+          console.log("File exists, SHA:", sha);
+        } else {
+          console.log("File does not exist yet");
+        }
+      } catch (error) {
+        console.error("Error checking file existence:", error);
+      }
+
+      // Create or update file
+      console.log("Preparing file content");
+      const encodedContent = btoa(unescape(encodeURIComponent(code)));
+      const bodyData = {
+        message: sha ? "Update solution from NeetCode" : "Add solution from NeetCode",
+        content: encodedContent
+      };
+      if (sha) {
+        bodyData.sha = sha;
+      }
+
+      console.log("Sending GitHub API request");
+      const response = await fetch(apiUrl, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `token ${githubToken}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/vnd.github.v3+json'
+        },
+        body: JSON.stringify(bodyData)
+      });
+
+      console.log("GitHub API response status:", response.status);
+      const result = await response.json();
+      
+      if (response.ok) {
+        console.log("GitHub sync successful");
+        return {
+          success: true,
+          message: `Successfully synced to ${username}/${repoName}/${filePath}`,
+          url: result.html_url
+        };
       } else {
-        throw new Error(`Unexpected status: ${checkResponse.status}`);
+        console.error("GitHub API error:", result);
+        return {
+          success: false,
+          message: `GitHub API Error: ${result.message || 'Unknown error'}`
+        };
       }
     } catch (error) {
-      console.error("Error checking file existence:", error);
+      console.error("Error syncing with GitHub:", error);
+      return { success: false, message: `Error: ${error.message}` };
     }
-
-    // Create or update file
-    console.log("Creating/updating file...");
-    const encodedContent = btoa(unescape(encodeURIComponent(solution)));
-    const bodyData = {
-      message: sha ? "Update solution from NeetCode" : "Add solution from NeetCode",
-      content: encodedContent
-    };
-    
-    if (sha) {
-      bodyData.sha = sha;
-    }
-
-    const response = await fetch(apiUrl, {
-      method: 'PUT',
-      headers: {
-        'Authorization': `Bearer ${githubToken}`,
-        'Content-Type': 'application/json',
-        'Accept': 'application/vnd.github.v3+json'
-      },
-      body: JSON.stringify(bodyData)
-    });
-
-    const result = await response.json();
-    
-    if (response.ok) {
-      console.log("GitHub sync successful:", result);
-      return { message: "Successfully synced solution with GitHub!" };
-    } else {
-      console.error("GitHub sync failed:", result);
-      return { message: `Error: ${result.message || 'Unknown error'}` };
-    }
-  } catch (error) {
-    console.error("Error in syncSolutionWithGitHub:", error);
-    return { message: `Error: ${error.message}` };
   }
+} else {
+  console.log("Content script already injected, skipping initialization");
 }
-
-// Message listener
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  console.log("Message received:", request.action);
-  
-  if (request.action === 'sync') {
-    extractCode()
-      .then(code => syncSolutionWithGitHub(code))
-      .then(result => {
-        console.log("Sync result:", result);
-        sendResponse(result);
-      })
-      .catch(error => {
-        console.error("Sync error:", error);
-        sendResponse({ message: `Error: ${error.message}` });
-      });
-    return true; // Keep the message channel open for async response
-  }
-  
-  if (request.action === 'viewNeetCode') {
-    getNeetCodeSolution()
-      .then(solution => {
-        sendResponse({ solution });
-      })
-      .catch(error => {
-        console.error("Error getting solution:", error);
-        sendResponse({ solution: null });
-      });
-    return true; // Keep the message channel open for async response
-  }
-});

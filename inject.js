@@ -23,10 +23,23 @@
         console.log("Found view lines:", viewLines.length);
         
         if (viewLines.length > 0) {
-          let code = '';
-          viewLines.forEach(line => {
-            code += line.textContent + '\n';
+          // Create an array of lines with their top positions
+          const lines = Array.from(viewLines).map(line => {
+            // Extract top position from style attribute
+            const topMatch = line.getAttribute('style').match(/top:\s*(\d+)px/);
+            const top = topMatch ? parseInt(topMatch[1]) : 0;
+            return {
+              text: line.textContent,
+              top: top
+            };
           });
+          
+          // Sort lines by top position
+          lines.sort((a, b) => a.top - b.top);
+          
+          // Join the sorted lines
+          let code = lines.map(line => line.text).join('\n');
+          
           // Clean up the code by removing extra whitespace
           code = code.replace(/\n\s*\n/g, '\n\n').trim();
           console.log("Extracted code from DOM:", code ? "Success" : "Empty");
@@ -41,4 +54,3 @@
       window.postMessage({ action: 'code', code: null }, '*');
     }
   })();
-  
